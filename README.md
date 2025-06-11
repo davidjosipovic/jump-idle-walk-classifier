@@ -1,4 +1,4 @@
-# Klasifikacija stanja likova u videoigrama (Video Game Character State Classification)
+# Video Game Character State Classification
 
 This is a machine learning project focused on classifying video game character states using computer vision and deep learning techniques.
 
