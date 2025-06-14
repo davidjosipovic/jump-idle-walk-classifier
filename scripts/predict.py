@@ -97,10 +97,12 @@ def main() -> None:
     parser.add_argument('image_path', type=str, nargs='?', 
                        help='Path to the image file (optional for diagnostics mode)')
     parser.add_argument('--model_path', type=str, 
-                       default=str(MODELS_DIR / "character_state_classifier.keras"),
+                       default=str(MODELS_DIR / "ultra_enhanced_classifier.keras"),
                        help='Path to the trained model')
     parser.add_argument('--diagnose', action='store_true', 
                        help='Run bias diagnosis on training data')
+    parser.add_argument('--confidence_threshold', type=float, default=0.6,
+                       help='Minimum confidence threshold for reliable predictions')
     
     args = parser.parse_args()
     setup_logging()
@@ -110,7 +112,13 @@ def main() -> None:
         # Load the model
         model_path = Path(args.model_path)
         if not model_path.exists():
-            raise FileNotFoundError(f"Model file not found: {model_path}")
+            # Try fallback to balanced model
+            fallback_path = MODELS_DIR / "balanced_character_classifier.keras"
+            if fallback_path.exists():
+                print(f"⚠️  Model {model_path.name} not found, using fallback: {fallback_path.name}")
+                model_path = fallback_path
+            else:
+                raise FileNotFoundError(f"Model file not found: {model_path}")
             
         logger.info(f"Loading model from {model_path}")
         model = load_saved_model(model_path)
@@ -134,7 +142,7 @@ def main() -> None:
             
             logger.info(f"Making prediction for {image_path}")
             predicted_class, confidence, probabilities = predict_single_image(
-                model, image_path, CLASS_NAMES
+                model, image_path, CLASS_NAMES, confidence_threshold=args.confidence_threshold
             )
             
             logger.info("Prediction completed successfully!")
@@ -143,7 +151,8 @@ def main() -> None:
             print(f"\n📋 Usage Examples:")
             print(f"   Single prediction: python scripts/predict.py path/to/image.png")
             print(f"   Run diagnostics: python scripts/predict.py --diagnose")
-            print(f"   Custom model: python scripts/predict.py path/to/image.png --model_path models/my_model.keras")
+            print(f"   Ultra-enhanced model: python scripts/predict.py path/to/image.png --model_path models/ultra_enhanced_classifier.keras")
+            print(f"   Custom confidence: python scripts/predict.py path/to/image.png --confidence_threshold 0.8")
 
     except Exception as e:
         logger.error(f"Error during prediction: {str(e)}")

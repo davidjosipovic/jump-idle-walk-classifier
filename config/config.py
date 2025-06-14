@@ -23,8 +23,8 @@ NUM_CLASSES: int = 3
 CLASS_NAMES = ["idle", "walking", "jumping"]
 
 # Training parameters - Enhanced for longer training
-EPOCHS: int = 20  # Increased from 20 to 50 for longer training
-LEARNING_RATE: float = 0.0005  # Slightly reduced for more stable training
+EPOCHS: int = 50  # Increased from 20 to 50 for better convergence with imbalanced data
+LEARNING_RATE: float = 0.0001  # Reduced for more stable training with severe imbalance
 VALIDATION_SPLIT: float = 0.2
 
 # Model architecture

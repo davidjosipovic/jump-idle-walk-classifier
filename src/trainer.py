@@ -12,7 +12,7 @@ if __name__ == "__main__":
 
 import tensorflow as tf
 import numpy as np
-from typing import Tuple, Dict, Any, Optional, List
+from typing import Tuple, Dict, Any, Optional
 import logging
 import matplotlib.pyplot as plt
 from sklearn.metrics import classification_report, confusion_matrix
@@ -24,24 +24,48 @@ from src.data_loader import load_single_image
 logger = logging.getLogger(__name__)
 
 
+def focal_loss_fn(y_true, y_pred, alpha=0.25, gamma=2.0):
+    """
+    Focal Loss implementation to handle class imbalance.
+    Compatible with TensorFlow model serialization.
+    """
+    # Convert to one-hot if needed
+    y_true = tf.cast(y_true, tf.int32)
+    y_true_one_hot = tf.one_hot(y_true, depth=len(CLASS_NAMES))
+    
+    # Clip predictions to prevent log(0)
+    epsilon = tf.keras.backend.epsilon()
+    y_pred = tf.clip_by_value(y_pred, epsilon, 1.0 - epsilon)
+    
+    # Compute focal loss
+    ce_loss = -y_true_one_hot * tf.math.log(y_pred)
+    pt = tf.where(tf.equal(y_true_one_hot, 1), y_pred, 1 - y_pred)
+    focal_weight = alpha * tf.pow(1 - pt, gamma)
+    focal_loss = focal_weight * ce_loss
+    
+    return tf.reduce_mean(tf.reduce_sum(focal_loss, axis=-1))
+
+
 def train_model(
     model: tf.keras.Model,
     train_dataset: tf.data.Dataset,
     validation_dataset: tf.data.Dataset,
     epochs: int = EPOCHS,
     checkpoint_dir: Path = MODELS_DIR / "checkpoints",
-    class_weights: Optional[Dict[int, float]] = None
+    class_weights: Optional[Dict[int, float]] = None,
+    steps_per_epoch: Optional[int] = None
 ) -> tf.keras.callbacks.History:
     """
     Train the model with training and validation datasets.
     
     Args:
         model: Compiled Keras model
-        train_dataset: Training dataset
+        train_dataset: Training dataset (can be infinite with .repeat())
         validation_dataset: Validation dataset
         epochs: Number of training epochs
         checkpoint_dir: Directory to save model checkpoints
         class_weights: Optional class weights for handling imbalanced data
+        steps_per_epoch: Number of steps per epoch (required for infinite datasets)
         
     Returns:
         Training history object
@@ -50,41 +74,72 @@ def train_model(
     # Create checkpoint directory if it doesn't exist
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     
-    # Define callbacks
+    # Calculate steps_per_epoch if not provided
+    if steps_per_epoch is None:
+        try:
+            # Try to estimate from validation dataset size
+            val_size = 0
+            for _ in validation_dataset:
+                val_size += 1
+            # Use 4x validation size as a reasonable estimate for training steps
+            steps_per_epoch = max(50, val_size * 4)  # Minimum 50 steps
+            logger.info(f"Estimated steps_per_epoch: {steps_per_epoch} (based on validation size: {val_size})")
+        except:
+            # Fallback to a reasonable default
+            steps_per_epoch = 100
+            logger.info(f"Using default steps_per_epoch: {steps_per_epoch}")
+    
+    # Enhanced callbacks for better overfitting prevention
     callbacks = [
         tf.keras.callbacks.ModelCheckpoint(
-            filepath=str(checkpoint_dir / "best_model.h5"),
-            monitor='val_accuracy',
+            filepath=str(checkpoint_dir / "best_model.keras"),
+            monitor='val_accuracy',  # Monitor validation accuracy
             save_best_only=True,
             save_weights_only=False,
-            verbose=1
+            verbose=1,
+            mode='max'  # Maximize validation accuracy
         ),
         tf.keras.callbacks.EarlyStopping(
-            monitor='val_loss',
-            patience=10,  # Increased patience for small datasets
+            monitor='val_accuracy',  # Monitor validation accuracy instead of loss
+            patience=20,  # Increased patience for longer training with imbalanced data
             restore_best_weights=True,
-            verbose=1
+            verbose=1,
+            mode='max',
+            min_delta=0.005  # Require at least 0.5% improvement (reduced threshold)
         ),
         tf.keras.callbacks.ReduceLROnPlateau(
-            monitor='val_loss',
-            factor=0.5,  # Less aggressive reduction
-            patience=5,  # Increased patience
-            min_lr=1e-7,
-            verbose=1
+            monitor='val_accuracy',  # Monitor validation accuracy
+            factor=0.3,  # More aggressive reduction for imbalanced data
+            patience=10,  # Reduced patience for faster adaptation
+            min_lr=1e-8,  # Lower minimum learning rate
+            verbose=1,
+            mode='max',
+            min_delta=0.003  # Require at least 0.3% improvement
+        ),
+        # Add learning rate scheduling for better convergence with imbalanced data
+        tf.keras.callbacks.LearningRateScheduler(
+            lambda epoch: 0.0001 * (0.95 ** epoch) if epoch < 15 else 0.0001 * (0.98 ** (epoch - 15)),
+            verbose=0
         )
     ]
     
-    logger.info(f"Starting training for {epochs} epochs")
+    logger.info(f"Starting training for {epochs} epochs with enhanced overfitting prevention")
+    logger.info(f"Steps per epoch: {steps_per_epoch}")
     if class_weights is not None:
         logger.info("Using class weights to handle imbalanced dataset")
+        # Log class weights for debugging
+        for class_idx, weight in class_weights.items():
+            class_name = CLASS_NAMES[class_idx] if class_idx < len(CLASS_NAMES) else f"Class_{class_idx}"
+            logger.info(f"  {class_name} (class {class_idx}): weight = {weight:.3f}")
     
-    # Train the model
+    # Train the model with specified steps per epoch
     history = model.fit(
         train_dataset,
+        steps_per_epoch=steps_per_epoch,  # Important for infinite datasets
         epochs=epochs,
         validation_data=validation_dataset,
         callbacks=callbacks,
-        class_weight=class_weights,  # Pass class weights here
+        class_weight=class_weights,
         verbose=1
     )
     
@@ -96,7 +151,7 @@ def train_model(
 def evaluate_model_detailed(
     model: tf.keras.Model,
     test_dataset: tf.data.Dataset,
-    class_names: List = CLASS_NAMES
+    class_names: list = CLASS_NAMES
 ) -> Dict[str, Any]:
     """
     Comprehensive model evaluation with detailed metrics.
@@ -202,7 +257,7 @@ def evaluate_model(
 def predict_single_image(
     model: tf.keras.Model,
     image_path: Path,
-    class_names: List = CLASS_NAMES,
+    class_names: list = CLASS_NAMES,
     confidence_threshold: float = 0.5
 ) -> Tuple[str, float, np.ndarray]:
     """
@@ -308,7 +363,7 @@ def save_model(
 
 def load_saved_model(model_path: Path) -> tf.keras.Model:
     """
-    Load a previously saved model.
+    Load a previously saved model with proper handling of custom objects.
     
     Args:
         model_path: Path to the saved model
@@ -316,11 +371,37 @@ def load_saved_model(model_path: Path) -> tf.keras.Model:
     Returns:
         Loaded Keras model
     """
-    
-    model = tf.keras.models.load_model(str(model_path))
-    logger.info(f"Model loaded from: {model_path}")
-    
-    return model
+    try:
+        # Try loading with custom objects
+        custom_objects = {
+            'focal_loss_fn': focal_loss_fn,
+        }
+        model = tf.keras.models.load_model(str(model_path), custom_objects=custom_objects)
+        logger.info(f"Model loaded from: {model_path}")
+        return model
+    except Exception as e:
+        logger.warning(f"Failed to load model with focal loss: {str(e)}")
+        logger.info("Attempting to load model without custom loss function...")
+        
+        try:
+            # Try loading without custom objects and recompile
+            model = tf.keras.models.load_model(str(model_path), compile=False)
+            
+            # Recompile with standard loss
+            model.compile(
+                optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),
+                loss='sparse_categorical_crossentropy',
+                metrics=['accuracy']
+            )
+            
+            logger.info(f"Model loaded from: {model_path} (recompiled with standard loss)")
+            print("⚠️  Note: Model loaded with standard categorical crossentropy loss instead of focal loss")
+            print("   The model should still work fine for predictions!")
+            return model
+            
+        except Exception as e2:
+            logger.error(f"Failed to load model: {str(e2)}")
+            raise ValueError(f"Cannot load model from {model_path}. Error: {str(e2)}")
 
 
 def plot_training_history(history: tf.keras.callbacks.History, save_path: Path = None) -> None:
