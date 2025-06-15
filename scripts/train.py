@@ -32,9 +32,9 @@ logger = logging.getLogger(__name__)
 # Improved Configuration
 CLASS_NAMES = ['idle', 'jumping', 'walking']
 IMAGE_SIZE = (224, 224)
-BATCH_SIZE = 16  # Smaller batch size for better training
-EPOCHS = 25
-LEARNING_RATE = 0.0001  # Much lower learning rate
+BATCH_SIZE = 8   # Even smaller batch size for better training
+EPOCHS = 35
+LEARNING_RATE = 0.00005  # Even lower learning rate for stability
 
 # Directories
 PROJECT_ROOT = Path(__file__).parent.parent  # Go up one level from scripts/
@@ -59,16 +59,20 @@ def get_class_counts():
 
 
 def create_improved_data_generators():
-    """Create improved data generators with better augmentation."""
+    """Create improved data generators with better augmentation.
+
+    Returns:
+        Tuple[ImageDataGenerator, ImageDataGenerator]: Training and validation data generators.
+    """
     
     # Training data augmentation - more conservative
     train_datagen = tf.keras.preprocessing.image.ImageDataGenerator(
         rescale=1./255,
-        rotation_range=15,      # Reduced rotation
-        width_shift_range=0.1,  # Reduced shifts
-        height_shift_range=0.1,
-        shear_range=0.1,        # Reduced shear
-        zoom_range=0.1,         # Reduced zoom
+        rotation_range=25,      # Increased rotation for jumping
+        width_shift_range=0.2,  # Increased shifts for walking
+        height_shift_range=0.2,
+        shear_range=0.2,        # Increased shear for jumping
+        zoom_range=0.2,         # Increased zoom for walking
         horizontal_flip=True,
         fill_mode='nearest'
     )
@@ -108,24 +112,29 @@ def create_improved_model():
         input_shape=IMAGE_SIZE + (3,)
     )
     
-    # Freeze fewer layers - allow more fine-tuning
-    for layer in base_model.layers[:-30]:  # Freeze all but last 30 layers
+    # Freeze fewer layers - allow more fine-tuning for jumping detection
+    for layer in base_model.layers[:-15]:  # Freeze all but last 15 layers
         layer.trainable = False
+    
+    print(f"🔧 Unfroze last 15 layers for fine-tuning jumping detection")
     
     # Build improved model
     model = tf.keras.Sequential([
         base_model,
         tf.keras.layers.GlobalAveragePooling2D(),
-        tf.keras.layers.Dropout(0.3),  # Add dropout for regularization
+        tf.keras.layers.Dropout(0.5),  # Increased dropout
+        tf.keras.layers.Dense(256, activation='relu'),  # Larger dense layer
+        tf.keras.layers.BatchNormalization(),  # Add batch normalization
+        tf.keras.layers.Dropout(0.3),
         tf.keras.layers.Dense(128, activation='relu'),
-        tf.keras.layers.Dropout(0.2),  # More dropout
+        tf.keras.layers.Dropout(0.2),
         tf.keras.layers.Dense(len(CLASS_NAMES), activation='softmax')
     ])
     
-    # Compile with lower learning rate
+    # Compile with categorical crossentropy and very strong class weights
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE),
-        loss='categorical_crossentropy',
+        loss='categorical_crossentropy',  # Use standard loss with strong class weights
         metrics=['accuracy']
     )
     
@@ -186,12 +195,25 @@ def main():
         classes=np.unique(y),
         y=y
     )
+    # Convert to proper dictionary with integer keys for Keras
     class_weight_dict = {i: weight for i, weight in enumerate(class_weights)}
-    print(f"⚖️  Class weights: {class_weight_dict}")
     
-    # Create data generators
-    print("\n📁 Loading datasets...")
+    # Apply much stronger weight adjustment for jumping class
+    jumping_idx = CLASS_NAMES.index('jumping')
+    class_weight_dict[jumping_idx] *= 4.0  # Much stronger weight for jumping
+    
+    print(f"⚖️  Final class weights: {class_weight_dict}")
+
+    # Check if validation directory exists
+    validation_dir = DATA_DIR / 'validation'
+    if not validation_dir.exists():
+        print("❌ Validation data directory not found!")
+        return
+
+    # Log dataset loading progress
+    logger.info("Loading training and validation datasets...")
     train_gen, val_gen = create_improved_data_generators()
+    logger.info("Datasets loaded successfully.")
     
     # Create model
     print("🏗️  Creating improved model...")
@@ -203,7 +225,7 @@ def main():
     callbacks = [
         tf.keras.callbacks.EarlyStopping(
             monitor='val_accuracy',
-            patience=8,  # More patience
+            patience=12,  # More patience for jumping class to learn
             restore_best_weights=True,
             verbose=1
         ),
@@ -249,6 +271,12 @@ def main():
     )
     print("\nClassification Report:")
     print(report)
+    
+    # Log misclassified images for debugging
+    misclassified = [(true, pred) for true, pred in zip(true_classes, predicted_classes) if true != pred]
+    logger.info(f"Misclassified images: {len(misclassified)}")
+    for true, pred in misclassified[:10]:  # Log first 10 misclassifications
+        logger.info(f"True: {CLASS_NAMES[true]}, Predicted: {CLASS_NAMES[pred]}")
     
     # Plot results
     plot_training_history(history)

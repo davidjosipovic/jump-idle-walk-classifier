@@ -57,9 +57,14 @@ class ImprovedPredictor:
                 raise FileNotFoundError("No trained model found! Please train a model first.")
         
         print(f"🧠 Loading model: {Path(model_path).name}")
-        model = tf.keras.models.load_model(model_path)
-        print("✅ Model loaded successfully!")
-        return model
+        try:
+            # Load model
+            model = tf.keras.models.load_model(model_path)
+            print("✅ Model loaded successfully!")
+            return model
+        except Exception as e:
+            print(f"❌ Error loading model: {e}")
+            raise RuntimeError(f"Failed to load model: {e}")
     
     def preprocess_image(self, image_path):
         """Preprocess image for prediction."""
