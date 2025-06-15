@@ -96,13 +96,6 @@ models/*.pt
 models/*.pth
 models/*.tflite
 
-# Logs and outputs
-logs/*.log
-logs/*.png
-logs/*.jpg
-logs/*.jpeg
-logs/*.txt
-*.log
 
 # TensorBoard logs
 runs/
