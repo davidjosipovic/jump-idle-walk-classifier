@@ -1,22 +1,5 @@
 #!/usr/bin/env python3
-"""
-Improved Video Game Character State Classifier - Training
-========================================================
 
-An improved training script that addresses overfitting and class bias:
-- Better data augmentation
-- Lower learning rate
-- More regularization
-- Better validation monitoring
-
-Features:
-- Uses MobileNetV2 with improved setup
-- Strong regularization to prevent overfitting
-- Better data augmentation
-- Lower learning rate for stable training
-"""
-
-import sys
 from pathlib import Path
 import tensorflow as tf
 import numpy as np
@@ -25,26 +8,22 @@ from sklearn.utils.class_weight import compute_class_weight
 from sklearn.metrics import classification_report
 import logging
 
-# Setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Improved Configuration
 CLASS_NAMES = ['idle', 'jumping', 'walking']
 IMAGE_SIZE = (224, 224)
-BATCH_SIZE = 8   # Even smaller batch size for better training
+BATCH_SIZE = 8
 EPOCHS = 35
-LEARNING_RATE = 0.00005  # Even lower learning rate for stability
+LEARNING_RATE = 0.00005
 
-# Directories
-PROJECT_ROOT = Path(__file__).parent.parent  # Go up one level from scripts/
+PROJECT_ROOT = Path(__file__).parent.parent
 DATA_DIR = PROJECT_ROOT / 'data' 
 MODELS_DIR = PROJECT_ROOT / 'models'
 MODELS_DIR.mkdir(exist_ok=True)
 
 
 def get_class_counts():
-    """Count images in each class."""
     train_dir = DATA_DIR / 'train'
     counts = {}
     
@@ -58,29 +37,20 @@ def get_class_counts():
     return counts
 
 
-def create_improved_data_generators():
-    """Create improved data generators with better augmentation.
-
-    Returns:
-        Tuple[ImageDataGenerator, ImageDataGenerator]: Training and validation data generators.
-    """
-    
-    # Training data augmentation - more conservative
+def create_data_generators():
     train_datagen = tf.keras.preprocessing.image.ImageDataGenerator(
         rescale=1./255,
-        rotation_range=25,      # Increased rotation for jumping
-        width_shift_range=0.2,  # Increased shifts for walking
+        rotation_range=25,
+        width_shift_range=0.2,
         height_shift_range=0.2,
-        shear_range=0.2,        # Increased shear for jumping
-        zoom_range=0.2,         # Increased zoom for walking
+        shear_range=0.2,
+        zoom_range=0.2,
         horizontal_flip=True,
         fill_mode='nearest'
     )
     
-    # Validation data - no augmentation
     validation_datagen = tf.keras.preprocessing.image.ImageDataGenerator(rescale=1./255)
     
-    # Create generators
     train_generator = train_datagen.flow_from_directory(
         DATA_DIR / 'train',
         target_size=IMAGE_SIZE,
@@ -102,47 +72,38 @@ def create_improved_data_generators():
     return train_generator, validation_generator
 
 
-def create_improved_model():
-    """Create improved model with better regularization."""
-    
-    # Load base model
+def create_model():
     base_model = tf.keras.applications.MobileNetV2(
         weights='imagenet',
         include_top=False,
         input_shape=IMAGE_SIZE + (3,)
     )
     
-    # Freeze fewer layers - allow more fine-tuning for jumping detection
-    for layer in base_model.layers[:-15]:  # Freeze all but last 15 layers
+    for layer in base_model.layers[:-15]:
         layer.trainable = False
     
-    print(f"🔧 Unfroze last 15 layers for fine-tuning jumping detection")
-    
-    # Build improved model
     model = tf.keras.Sequential([
         base_model,
         tf.keras.layers.GlobalAveragePooling2D(),
-        tf.keras.layers.Dropout(0.5),  # Increased dropout
-        tf.keras.layers.Dense(256, activation='relu'),  # Larger dense layer
-        tf.keras.layers.BatchNormalization(),  # Add batch normalization
+        tf.keras.layers.Dropout(0.5),
+        tf.keras.layers.Dense(256, activation='relu'),
+        tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Dropout(0.3),
         tf.keras.layers.Dense(128, activation='relu'),
         tf.keras.layers.Dropout(0.2),
         tf.keras.layers.Dense(len(CLASS_NAMES), activation='softmax')
     ])
     
-    # Compile with categorical crossentropy and very strong class weights
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE),
-        loss='categorical_crossentropy',  # Use standard loss with strong class weights
+        loss='categorical_crossentropy',
         metrics=['accuracy']
     )
     
     return model
 
 
-def plot_training_history(history, filename='logs/improved_training_history.png'):
-    """Plot training history."""
+def plot_training_history(history, filename='logs/training_history.png'):
     plt.figure(figsize=(12, 4))
     
     plt.subplot(1, 2, 1)
@@ -166,26 +127,24 @@ def plot_training_history(history, filename='logs/improved_training_history.png'
     plt.tight_layout()
     plt.savefig(filename, dpi=300, bbox_inches='tight')
     plt.close()
-    print(f"📊 Training plot saved: {filename}")
+    print(f"Training plot saved: {filename}")
 
 
 def main():
-    print("🎮 Improved Character State Classifier Training")
-    print("=" * 50)
+    print("Character State Classifier Training")
+    print("=" * 40)
     
-    # Check dataset
     counts = get_class_counts()
     total_images = sum(counts.values())
-    print("📊 Dataset Info:")
+    print("Dataset Info:")
     for class_name, count in counts.items():
         print(f"   {class_name}: {count} images")
     print(f"   Total: {total_images} images")
     
     if total_images == 0:
-        print("❌ No training data found!")
+        print("No training data found!")
         return
     
-    # Compute class weights
     y = []
     for i, (class_name, count) in enumerate(counts.items()):
         y.extend([i] * count)
@@ -195,57 +154,50 @@ def main():
         classes=np.unique(y),
         y=y
     )
-    # Convert to proper dictionary with integer keys for Keras
     class_weight_dict = {i: weight for i, weight in enumerate(class_weights)}
     
-    # Apply much stronger weight adjustment for jumping class
     jumping_idx = CLASS_NAMES.index('jumping')
-    class_weight_dict[jumping_idx] *= 4.0  # Much stronger weight for jumping
+    class_weight_dict[jumping_idx] *= 4.0
     
-    print(f"⚖️  Final class weights: {class_weight_dict}")
+    print(f"Final class weights: {class_weight_dict}")
 
-    # Check if validation directory exists
     validation_dir = DATA_DIR / 'validation'
     if not validation_dir.exists():
-        print("❌ Validation data directory not found!")
+        print("Validation data directory not found!")
         return
 
-    # Log dataset loading progress
     logger.info("Loading training and validation datasets...")
-    train_gen, val_gen = create_improved_data_generators()
+    train_gen, val_gen = create_data_generators()
     logger.info("Datasets loaded successfully.")
     
-    # Create model
-    print("🏗️  Creating improved model...")
-    model = create_improved_model()
+    print("Creating model...")
+    model = create_model()
     
-    print(f"✅ Model created with {model.count_params():,} parameters")
+    print(f"Model created with {model.count_params():,} parameters")
     
-    # Callbacks
     callbacks = [
         tf.keras.callbacks.EarlyStopping(
             monitor='val_accuracy',
-            patience=12,  # More patience for jumping class to learn
+            patience=12,
             restore_best_weights=True,
             verbose=1
         ),
         tf.keras.callbacks.ReduceLROnPlateau(
             monitor='val_loss',
             factor=0.5,
-            patience=4,  # Reduce learning rate when stuck
+            patience=4,
             min_lr=1e-7,
             verbose=1
         ),
         tf.keras.callbacks.ModelCheckpoint(
-            MODELS_DIR / 'improved_character_classifier.keras',
+            MODELS_DIR / 'character_classifier.keras',
             monitor='val_accuracy',
             save_best_only=True,
             verbose=1
         )
     ]
     
-    # Train model
-    print(f"\n🚀 Training for {EPOCHS} epochs...")
+    print(f"\nTraining for {EPOCHS} epochs...")
     history = model.fit(
         train_gen,
         epochs=EPOCHS,
@@ -255,14 +207,12 @@ def main():
         verbose=1
     )
     
-    # Evaluate
-    print("\n📊 Evaluating model...")
-    val_gen.reset()  # Reset generator
+    print("\nEvaluating model...")
+    val_gen.reset()
     predictions = model.predict(val_gen)
     predicted_classes = np.argmax(predictions, axis=1)
     true_classes = val_gen.classes
     
-    # Classification report
     report = classification_report(
         true_classes, 
         predicted_classes, 
@@ -272,34 +222,31 @@ def main():
     print("\nClassification Report:")
     print(report)
     
-    # Log misclassified images for debugging
     misclassified = [(true, pred) for true, pred in zip(true_classes, predicted_classes) if true != pred]
     logger.info(f"Misclassified images: {len(misclassified)}")
-    for true, pred in misclassified[:10]:  # Log first 10 misclassifications
+    for true, pred in misclassified[:10]:
         logger.info(f"True: {CLASS_NAMES[true]}, Predicted: {CLASS_NAMES[pred]}")
     
-    # Plot results
     plot_training_history(history)
     
-    # Final accuracy
     final_accuracy = max(history.history['val_accuracy'])
     
-    print("\n" + "=" * 50)
-    print("🏆 IMPROVED TRAINING COMPLETED!")
-    print("=" * 50)
-    print(f"📈 Best Validation Accuracy: {final_accuracy:.1%}")
-    print(f"📁 Model saved: improved_character_classifier.keras")
-    print(f"📊 Training plot: improved_training_history.png")
+    print("\n" + "=" * 40)
+    print("TRAINING COMPLETED")
+    print("=" * 40)
+    print(f"Best Validation Accuracy: {final_accuracy:.1%}")
+    print(f"Model saved: character_classifier.keras")
+    print(f"Training plot: training_history.png")
     
     if final_accuracy > 0.8:
-        print("✅ Great results!")
+        print("Great results!")
     elif final_accuracy > 0.6:
-        print("⚠️ Decent results - might need more data or tuning")
+        print("Decent results - might need more data or tuning")
     else:
-        print("❌ Poor results - check data quality and model setup")
+        print("Poor results - check data quality and model setup")
     
-    print("\n🎯 Test your improved model:")
-    print("   python simple_predict.py path/to/image.png")
+    print("\nTest your model:")
+    print("   python predict.py path/to/image.png")
 
 
 if __name__ == "__main__":
