@@ -38,7 +38,7 @@ LEARNING_RATE = 0.0001  # Much lower learning rate
 
 # Directories
 PROJECT_ROOT = Path(__file__).parent
-DATA_DIR = PROJECT_ROOT / 'data' / 'processed'
+DATA_DIR = PROJECT_ROOT / 'data' 
 MODELS_DIR = PROJECT_ROOT / 'models'
 MODELS_DIR.mkdir(exist_ok=True)
 

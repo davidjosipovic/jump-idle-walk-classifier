@@ -26,7 +26,7 @@ IMAGE_SIZE = (224, 224)
 # Directories
 PROJECT_ROOT = Path(__file__).parent
 MODELS_DIR = PROJECT_ROOT / 'models'
-DATA_DIR = PROJECT_ROOT / 'data' / 'processed'
+DATA_DIR = PROJECT_ROOT / 'data'
 
 
 class ImprovedPredictor:
