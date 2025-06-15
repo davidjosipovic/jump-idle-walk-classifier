@@ -89,19 +89,12 @@ Pipfile.lock
 # Machine Learning specific
 # Trained models (keep checkpoints directory structure but ignore files)
 models/*.h5
-models/*.keras
 models/*.pkl
 models/*.joblib
 models/*.onnx
 models/*.pt
 models/*.pth
 models/*.tflite
-models/checkpoints/*.h5
-models/checkpoints/*.keras
-models/checkpoints/*.pkl
-models/checkpoints/*.pt
-models/checkpoints/*.pth
-!models/checkpoints/.gitkeep
 
 # Logs and outputs
 logs/*.log
