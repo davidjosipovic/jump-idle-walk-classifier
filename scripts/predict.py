@@ -24,7 +24,7 @@ CLASS_NAMES = ['idle', 'jumping', 'walking']
 IMAGE_SIZE = (224, 224)
 
 # Directories
-PROJECT_ROOT = Path(__file__).parent
+PROJECT_ROOT = Path(__file__).parent.parent
 MODELS_DIR = PROJECT_ROOT / 'models'
 DATA_DIR = PROJECT_ROOT / 'data'
 
@@ -172,7 +172,7 @@ class ImprovedPredictor:
     
     def test_validation_data(self):
         """Test on validation dataset."""
-        val_dir = DATA_DIR / 'validation'
+        val_dir = DATA_DIR / 'test'
         
         if not val_dir.exists():
             print(f"❌ Validation directory not found: {val_dir}")
